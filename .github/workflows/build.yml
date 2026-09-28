@@ -1,0 +1,104 @@
+name: Build Xiaomi 11T Pro (vili) Kernel - SM8350 Next-Gen
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Kernel
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          ref: 16.0
+          fetch-depth: 1
+
+      - name: Set up Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ccache automake flex lzop bison \
+            gperf build-essential zip curl zlib1g-dev g++-multilib \
+            libxml2-utils bzip2 libbz2-dev libssl-dev python3 \
+            bc libncurses5-dev libncursesw5-dev libgl1-mesa-dev \
+            libxml2-utils xsltproc libelf-dev libfl-dev libarchive-tools libtinfo5
+
+      - name: Download Clang Toolchain (AOSP Clang r416183b1)
+        run: |
+          mkdir -p clang
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r416183b1.tar.gz" -o clang.tar.gz
+          tar -C clang/ -zxf clang.tar.gz
+          rm clang.tar.gz
+
+      - name: Set up KernelSU
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+
+      - name: Configure and Build Kernel Image
+        run: |
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          # Load defconfig
+          make O=out vendor/lahaina-qgki_defconfig || make O=out vendor/vili_user_defconfig || make O=out vili_defconfig
+
+          # Set LocalVersion to Next-Gen
+          scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Next-Gen"
+
+          # Force all required configs to '=y'
+          scripts/config --file out/.config \
+            -e CONFIG_OVERLAY_FS \
+            -e CONFIG_TMPFS_XATTR \
+            -e CONFIG_TMPFS_POSIX_ACL \
+            -e CONFIG_FS_POSIX_ACL \
+            -e CONFIG_BPF_SYSCALL \
+            -e CONFIG_NET_CLS_ACT \
+            -e CONFIG_NET_SCH_INGRESS \
+            -e CONFIG_NET_ACT_BPF \
+            -e CONFIG_CGROUP_BPF \
+            -e CONFIG_BPF_JIT \
+            -e CONFIG_CGROUPS \
+            -e CONFIG_MEMCG \
+            -e CONFIG_KPROBES \
+            -e CONFIG_HAVE_KPROBES \
+            -e CONFIG_KPROBE_EVENTS \
+            -e CONFIG_SECURITY_SELINUX_BOOTPARAM \
+            -d CONFIG_ANDROID_PARANOID_NETWORK
+
+          make O=out olddefconfig
+
+          # Compile Kernel Image only
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image
+
+      - name: Prepare AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
+          
+          # Clean vendor_boot install to keep stock partitions untouched
+          sed -i '/## vendor_boot files attributes/,/## end vendor_boot install/d' AnyKernel3/anykernel.sh
+
+          # Copy compiled Image
+          cp out/arch/arm64/boot/Image AnyKernel3/
+
+          cd AnyKernel3
+          zip -r9 ../AnyKernel3-vili-HyperOS-KernelSU.zip * -x .git README.md *placeholder
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3-vili-HyperOS-KernelSU
+          path: AnyKernel3-vili-HyperOS-KernelSU.zip
