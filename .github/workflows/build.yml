@@ -26,7 +26,10 @@ jobs:
 
       - name: Download Clang Toolchain
         run: |
-          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b1.git clang
+          mkdir -p clang
+          curl -L "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman" -o antman
+          bash antman -S=05012024
+          mv bin lib include clang/ || true
 
       - name: Set up KernelSU
         run: |
