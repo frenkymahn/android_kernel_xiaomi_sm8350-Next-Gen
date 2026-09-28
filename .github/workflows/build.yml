@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          ref: 16.0
+          ref: "16.0"
           fetch-depth: 1
 
       - name: Set up Build Environment
