@@ -24,12 +24,9 @@ jobs:
             bc libncurses5-dev libncursesw5-dev libgl1-mesa-dev \
             libxml2-utils xsltproc libelf-dev libfl-dev libarchive-tools libtinfo5
 
-      - name: Download Clang Toolchain (AOSP Clang r416183b1)
+      - name: Download Clang Toolchain
         run: |
-          mkdir -p clang
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r416183b1.tar.gz" -o clang.tar.gz
-          tar -C clang/ -zxf clang.tar.gz
-          rm clang.tar.gz
+          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b1.git clang
 
       - name: Set up KernelSU
         run: |
