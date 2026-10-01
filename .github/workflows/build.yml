@@ -15,109 +15,73 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison build-essential curl flex git libssl-dev libelf-dev python3 zip libncurses5-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi lld llvm
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf \
+            libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            python3 python3-pip libssl-dev libelf-dev libtinfo5 tar wget
 
       - name: Download Official AOSP Clang
         run: |
           mkdir -p clang
           cd clang
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android12-release .
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
+          tar -xf clang-r416183b.tar.gz
           cd ..
 
       - name: Setup KernelSU
         run: |
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Configure and Build Kernel (Image, DTBs, DTBOs)
         run: |
-          export PATH="$(pwd)/clang/clang-r416183b/bin:$PATH"
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export CC=clang
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          # 1. Base QGKI defconfig
-          make O=out ARCH=arm64 CC=clang LD=ld.lld vendor/lahaina-qgki_defconfig
-
-          # 2. Merge Xiaomi & Vili QGKI configs
-          scripts/kconfig/merge_config.sh -m -O out out/.config \
-            arch/arm64/configs/vendor/lahaina_QGKI.config \
-            arch/arm64/configs/vendor/xiaomi_QGKI.config \
-            arch/arm64/configs/vendor/vili_QGKI.config
-
-          # 3. Finalize config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig
-
-          # 4. Compile Image and Device Trees (DTB & DTBO)
-          make -j$(nproc --all) ARCH=arm64 CC=clang LD=ld.lld KCFLAGS="-w" Image dtbs O=out
+          make O=out ARCH=arm64 vendor/lahaina-qgki_defconfig vendor/vili_QGKI.config
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image dtbs dtbo.img || make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image dtbs
 
       - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
         run: |
-          # 1. Clone AnyKernel3
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # 2. Copy compiled Image
-          cp out/arch/arm64/boot/Image AnyKernel3/Image
+          # 1. Configure AnyKernel3 for vili
+          sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # 3. Concatenate and prepare DTB
-          find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
+          # 2. Copy compiled kernel image
+          cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # 4. Build official dtbo.img using mkdtboimg
-          python3 scripts/dtc/libfdt/mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtbo" | sort)
+          # 3. Concatenate DTBs into single dtb
+          find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 5. Create AnyKernel3 script with DTBO, vendor_boot, and Boot flashing
-          cat << 'EOF' > AnyKernel3/anykernel.sh
-          ### AnyKernel3 Ramdisk Mod Script
-          ## Xiaomi 11T Pro (vili) - HyperOS / MIUI Safe Flash
+          # 4. Copy existing dtbo.img or generate using mkdtboimg
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          else
+            wget -q https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz -O ufdt.tar.gz
+            tar -xf ufdt.tar.gz mkdtboimg.py
+            python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
+          fi
 
-          properties() { '
-          kernel.string=NextGen Kernel for Xiaomi 11T Pro (vili)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=Xiaomi 11T Pro
-          device.name2=milahaina
-          device.name3=vili
-          device.name4=vili_in
-          supported.versions=11.0-17.0
-          '; }
-
-          IS_SLOT_DEVICE=1;
-          RAMDISK_COMPRESSION=auto;
-          PATCH_VBMETA_FLAG=auto;
-
-          . tools/ak3-core.sh && passthrough;
-
-          # 1. Flash compiled HyperOS DTBO
-          flash_dtbo;
-
-          # 2. Patch vendor_boot (Updates dtb safely, retains vendor drivers)
-          BLOCK=vendor_boot;
-          dump_boot;
-          write_boot;
-
-          # 3. Patch main boot (Replaces kernel Image)
-          BLOCK=boot;
-          dump_boot;
-          write_boot;
-          EOF
-
-          # 6. Compress into flashable ZIP
+          # 5. Create flashable zip package
           cd AnyKernel3
-          zip -r9 ../Xiaomi-11T-Pro-NextGen-HyperOS-Kernel.zip * -x .git README.md
+          zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
+          cd ..
 
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi-11T-Pro-HyperOS-Kernel-Zip
-          path: Xiaomi-11T-Pro-NextGen-HyperOS-Kernel.zip
+          name: Xiaomi-11T-Pro-NextGen-Kernel
+          path: Xiaomi-11T-Pro-NextGen-Kernel.zip
