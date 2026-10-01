@@ -21,9 +21,7 @@ jobs:
 
       - name: Download Official AOSP Clang
         run: |
-          mkdir -p clang
-          curl -LSs "https://raw.githubusercontent.com/ZyC奇/Clang/main/install.sh" | bash -s clang || \
-          (cd clang && wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz && tar -xf clang-r416183b.tar.gz && cd ..)
+          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b.git clang
 
       - name: Setup KernelSU
         run: |
