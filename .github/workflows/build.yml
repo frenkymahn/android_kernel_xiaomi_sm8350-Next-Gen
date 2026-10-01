@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Compile and Package Kernel
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout Kernel Source
@@ -55,18 +55,18 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # 1. Configure AnyKernel3 for vili
+          # Configure AnyKernel3 for vili
           sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # 2. Copy compiled kernel image
+          # Copy compiled kernel image
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # 3. Concatenate DTBs into single dtb
+          # Concatenate DTBs into single dtb
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 4. Copy existing dtbo.img or generate using mkdtboimg
+          # Copy existing dtbo.img or generate using mkdtboimg
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           else
@@ -75,7 +75,7 @@ jobs:
             python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
           fi
 
-          # 5. Create flashable zip package
+          # Create flashable zip package
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
