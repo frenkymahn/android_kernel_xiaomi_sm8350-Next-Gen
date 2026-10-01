@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Compile and Package Kernel
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Kernel Source
@@ -17,14 +17,13 @@ jobs:
           sudo apt update
           sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf \
             libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
-            python3 python3-pip libssl-dev libelf-dev libtinfo5 tar wget
+            python3 python3-pip libssl-dev libelf-dev tar wget
 
       - name: Download Official AOSP Clang
         run: |
           mkdir -p clang
           cd clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
-          tar -xf clang-r416183b.tar.gz
+          git clone https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b.git --depth=1 .
           cd ..
 
       - name: Setup KernelSU
@@ -45,8 +44,7 @@ jobs:
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            Image dtbs dtbo.img || make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image dtbs dtbo.img || make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image dtbs
@@ -55,27 +53,28 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # Configure AnyKernel3 for vili
+          # Set device properties for vili
           sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # Copy compiled kernel image
+          # 1. Copy Kernel Image
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # Concatenate DTBs into single dtb
+          # 2. Merge Device Tree Blobs (dtb)
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # Copy existing dtbo.img or generate using mkdtboimg
+          # 3. Handle dtbo.img without relying on local missing python script
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          elif find out/ -name "dtbo.img" | grep -q dtbo.img; then
+            cp $(find out/ -name "dtbo.img" | head -n 1) AnyKernel3/
           else
-            wget -q https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz -O ufdt.tar.gz
-            tar -xf ufdt.tar.gz mkdtboimg.py
+            curl -sSL "https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-20.0/utils/src/mkdtboimg.py" -o mkdtboimg.py
             python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
           fi
 
-          # Create flashable zip package
+          # 4. Pack zip
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
