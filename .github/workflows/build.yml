@@ -21,8 +21,10 @@ jobs:
 
       - name: Download Official AOSP Clang
         run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android12L-release clang-repo
           mkdir -p clang
-          curl -sSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r450784d.tar.gz" | tar -xz -C clang
+          cp -r clang-repo/clang-r416183b/* clang/
+          rm -rf clang-repo
 
       - name: Setup KernelSU
         run: |
