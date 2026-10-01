@@ -22,10 +22,10 @@ jobs:
       - name: Download Official AOSP Clang
         run: |
           mkdir -p clang
-          curl -sSL "https://github.com/ZyC奇/Clang/releases/download/12.0.8-20210518/Clang-12.0.8-20210518.tar.gz" -o clang.tar.gz || \
-          curl -sSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz" -o clang.tar.gz
-          tar -xf clang.tar.gz -C clang
-          rm -f clang.tar.gz
+          cd clang
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
+          tar -xf clang-r416183b.tar.gz
+          cd ..
 
       - name: Setup KernelSU
         run: |
