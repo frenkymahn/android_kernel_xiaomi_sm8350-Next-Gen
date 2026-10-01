@@ -23,7 +23,8 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-          git clone https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b.git --depth=1 .
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
+          tar -xf clang-r416183b.tar.gz
           cd ..
 
       - name: Setup KernelSU
@@ -51,20 +52,20 @@ jobs:
 
       - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # Set device properties for vili
+          # Configure AnyKernel3 for vili
           sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # 1. Copy Kernel Image
+          # Copy Kernel Image
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # 2. Merge Device Tree Blobs (dtb)
+          # Merge Device Tree Blobs (dtb)
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Handle dtbo.img without relying on local missing python script
+          # Handle dtbo.img directly from out directory or download official tool
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           elif find out/ -name "dtbo.img" | grep -q dtbo.img; then
@@ -74,7 +75,7 @@ jobs:
             python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
           fi
 
-          # 4. Pack zip
+          # Create flashable zip package
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
