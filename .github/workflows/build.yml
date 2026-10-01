@@ -21,7 +21,11 @@ jobs:
 
       - name: Download Official AOSP Clang
         run: |
-          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b.git clang
+          mkdir -p clang
+          curl -sSL "https://github.com/ZyC奇/Clang/releases/download/12.0.8-20210518/Clang-12.0.8-20210518.tar.gz" -o clang.tar.gz || \
+          curl -sSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz" -o clang.tar.gz
+          tar -xf clang.tar.gz -C clang
+          rm -f clang.tar.gz
 
       - name: Setup KernelSU
         run: |
@@ -61,7 +65,7 @@ jobs:
           # 2. Merge Device Tree Blobs (dtb)
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Handle dtbo.img directly or fetch builder tool
+          # 3. Handle dtbo.img
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           elif find out/ -name "dtbo.img" | grep -q dtbo.img; then
@@ -71,7 +75,7 @@ jobs:
             python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
           fi
 
-          # 4. Pack flashable zip
+          # 4. Create flashable zip package
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
