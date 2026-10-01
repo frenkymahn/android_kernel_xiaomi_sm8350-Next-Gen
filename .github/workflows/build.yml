@@ -22,10 +22,8 @@ jobs:
       - name: Download Official AOSP Clang
         run: |
           mkdir -p clang
-          cd clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
-          tar -xf clang-r416183b.tar.gz
-          cd ..
+          curl -LSs "https://raw.githubusercontent.com/ZyC奇/Clang/main/install.sh" | bash -s clang || \
+          (cd clang && wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz && tar -xf clang-r416183b.tar.gz && cd ..)
 
       - name: Setup KernelSU
         run: |
@@ -52,20 +50,20 @@ jobs:
 
       - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
         run: |
-          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
           # Configure AnyKernel3 for vili
           sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # Copy Kernel Image
+          # 1. Copy Kernel Image
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # Merge Device Tree Blobs (dtb)
+          # 2. Merge Device Tree Blobs (dtb)
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # Handle dtbo.img directly from out directory or download official tool
+          # 3. Handle dtbo.img directly or fetch builder tool
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           elif find out/ -name "dtbo.img" | grep -q dtbo.img; then
@@ -75,7 +73,7 @@ jobs:
             python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/ -name "*.dtbo")
           fi
 
-          # Create flashable zip package
+          # 4. Pack flashable zip
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
