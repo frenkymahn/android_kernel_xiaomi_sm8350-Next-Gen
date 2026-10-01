@@ -28,7 +28,7 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: Configure and Build Kernel
+      - name: Configure and Build Kernel (Image, DTBs, DTBOs)
         run: |
           export PATH="$(pwd)/clang/clang-r416183b/bin:$PATH"
           export ARCH=arm64
@@ -56,28 +56,27 @@ jobs:
           # 3. Finalize config
           make O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig
 
-          # 4. Compile Image and DTBs
+          # 4. Compile Image and Device Trees (DTB & DTBO)
           make -j$(nproc --all) ARCH=arm64 CC=clang LD=ld.lld KCFLAGS="-w" Image dtbs O=out
 
-      - name: Package Kernel with AnyKernel3
+      - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
         run: |
           # 1. Clone AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-          # 2. Copy compiled Image and concatenate DTBs
+          # 2. Copy compiled Image
           cp out/arch/arm64/boot/Image AnyKernel3/Image
+
+          # 3. Concatenate and prepare DTB
           find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Generate dtbo.img if dtbo files exist
-          if [ -f scripts/dtc/libfdt/mkdtboimg.py ]; then
-            python3 scripts/dtc/libfdt/mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtbo") || true
-          fi
+          # 4. Build official dtbo.img using mkdtboimg
+          python3 scripts/dtc/libfdt/mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtbo" | sort)
 
-          # 4. Create anykernel.sh for HyperOS / MIUI
+          # 5. Create AnyKernel3 script with DTBO, vendor_boot, and Boot flashing
           cat << 'EOF' > AnyKernel3/anykernel.sh
           ### AnyKernel3 Ramdisk Mod Script
-          ## osm0sis @ xda-developers
-          ## Xiaomi 11T Pro (vili) - HyperOS / MIUI Flash
+          ## Xiaomi 11T Pro (vili) - HyperOS / MIUI Safe Flash
 
           properties() { '
           kernel.string=NextGen Kernel for Xiaomi 11T Pro (vili)
@@ -93,23 +92,27 @@ jobs:
           supported.versions=11.0-17.0
           '; }
 
-          BLOCK=boot;
           IS_SLOT_DEVICE=1;
           RAMDISK_COMPRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
 
           . tools/ak3-core.sh && passthrough;
 
-          # Flash DTBO if present
-          if [ -f dtbo.img ]; then
-            flash_dtbo;
-          fi
+          # 1. Flash compiled HyperOS DTBO
+          flash_dtbo;
 
+          # 2. Patch vendor_boot (Updates dtb safely, retains vendor drivers)
+          BLOCK=vendor_boot;
+          dump_boot;
+          write_boot;
+
+          # 3. Patch main boot (Replaces kernel Image)
+          BLOCK=boot;
           dump_boot;
           write_boot;
           EOF
 
-          # 5. Create flashable zip package
+          # 6. Compress into flashable ZIP
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-HyperOS-Kernel.zip * -x .git README.md
 
