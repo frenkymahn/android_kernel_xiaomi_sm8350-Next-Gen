@@ -19,11 +19,11 @@ jobs:
             libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
             python3 python3-pip libssl-dev libelf-dev tar wget binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
 
-      - name: Download Official AOSP Clang r15
+      - name: Download Official AOSP Clang
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android14-release clang-repo
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android12L-release clang-repo
           mkdir -p clang
-          cp -r clang-repo/clang-r450784d/* clang/
+          find clang-repo -maxdepth 2 -name "bin" -exec dirname {} \; | head -n 1 | xargs -I {} cp -r {}/* clang/
           rm -rf clang-repo
 
       - name: Setup KernelSU
