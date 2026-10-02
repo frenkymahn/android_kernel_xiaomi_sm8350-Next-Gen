@@ -10,6 +10,13 @@ jobs:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
 
+      - name: Maximize Build Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/share/swift
+
       - name: Set up Build Environment
         run: |
           sudo apt-get update
@@ -19,7 +26,9 @@ jobs:
 
       - name: Download AOSP Clang
         run: |
-          git clone --depth=1 https://gitlab.com/ElectroPerf/prebuilts_clang_host_linux-x86_clang-r487747c.git clang
+          mkdir -p clang
+          curl -LSs --retry 5 --retry-connrefused \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz" | tar -xz -C clang/
 
       - name: Configure Kernel (Merged defconfigs)
         run: |
@@ -56,7 +65,7 @@ jobs:
 
       - name: Package Kernel with AnyKernel3
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
           # 1. Copy Image, DTB and DTBO
           cp out/arch/arm64/boot/Image AnyKernel3/
