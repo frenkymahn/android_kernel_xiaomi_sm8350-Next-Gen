@@ -53,41 +53,78 @@ jobs:
           # 2. Defconfig sync
           make O=out ARCH=arm64 CC=clang olddefconfig
 
-          # 3. Compile Kernel Image & DTBs
+          # 3. Compile Kernel Image
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image dtbs
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image
 
-      - name: Package Kernel with AnyKernel3 (HyperOS Full Flasher)
+      - name: Package Kernel with AnyKernel3 (Pure Image Setup)
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # Setup device info
-          sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
-          sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
-          sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
-
-          # Set slot detection & target all partitions (boot, dtbo, vendor_boot)
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;\nblock=\/dev\/block\/bootdevice\/by-name\/boot;\ncustom_parts="dtbo vendor_boot";/g' AnyKernel3/anykernel.sh
-
-          # 1. Copy Kernel Image (boot partition)
+          # 1. Copy only the compiled Image
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # 2. Merge Device Tree Blobs (vendor_boot partition)
-          find out/arch/arm64/boot/dts/ -name "*.dtb" -not -name ".*" -exec cat {} + > AnyKernel3/dtb
+          # 2. Generate AnyKernel Script targeting boot, dtbo, and vendor_boot partitions
+          cat << 'EOF' > AnyKernel3/anykernel.sh
+          ### AnyKernel3 Ramdisk Mod Script
+          ## osm0sis @ xda-developers
 
-          # 3. Generate dtbo.img using mkdtboimg
-          curl -sSL "https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-20.0/utils/src/mkdtboimg.py" -o mkdtboimg.py
+          ### AnyKernel setup
+          # global properties
+          properties() { '
+          kernel.string=NextGen Kernel for Xiaomi 11T Pro (vili)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=vili
+          device.name2=Xiaomi 11T Pro
+          supported.versions=
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          '; } # end properties
 
-          # Collect compiled vili/sm8350 blobs safely
-          DT_LIST=$(find out/ -name "*vili*.dtb" -o -name "*sm8350*.dtb" -o -name "*.dtbo" 2>/dev/null | tr '\n' ' ')
+          ### AnyKernel install
+          boot_attributes() {
+          set_perm_recursive 0 0 755 644 $RAMDISK/*;
+          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+          } # end attributes
 
-          if [ -n "$DT_LIST" ]; then
-            python3 mkdtboimg.py create AnyKernel3/dtbo.img --page_size=4096 $DT_LIST || true
-          fi
+          # boot install
+          BLOCK=boot;
+          is_slot_device=auto;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
 
-          # 4. Pack flashable zip
+          . tools/ak3-core.sh;
+
+          split_boot;
+          flash_boot;
+          ## end boot install
+
+          # dtbo install
+          BLOCK=dtbo;
+          is_slot_device=auto;
+
+          reset_ak;
+          split_boot;
+          flash_boot;
+          ## end dtbo install
+
+          # vendor_boot install
+          BLOCK=vendor_boot;
+          is_slot_device=auto;
+
+          reset_ak;
+          split_boot;
+          flash_boot;
+          ## end vendor_boot install
+          EOF
+
+          # Clean up any unused files and pack zip
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
