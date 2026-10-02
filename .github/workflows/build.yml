@@ -42,27 +42,18 @@ jobs:
 
           mkdir -p out
 
-          # 1. Base merge using merge_config.sh
+          # 1. Base config merge
           ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out \
             arch/arm64/configs/vendor/lahaina-qgki_defconfig \
             arch/arm64/configs/vendor/vili_QGKI.config
 
-          # 2. Force enable missing Xiaomi hardware, board info and display symbols
-          cat << 'EOF' >> out/.config
-          CONFIG_BOARD_HARDWARE_INFO=y
-          CONFIG_XIAOMI_HARDWARE_INFO=y
-          CONFIG_BOARD_INFO=y
-          CONFIG_MACH_XIAOMI_VILI=y
-          CONFIG_XIAOMI_SM8350=y
-          CONFIG_MI_DISP=y
-          CONFIG_DRM_MI_DISP=y
-          CONFIG_XIAOMI_DISPLAY=y
-          EOF
+          # Set Custom LocalVersion Name to -Next-Gen
+          scripts/config --file out/.config --set-str LOCALVERSION "-Next-Gen"
 
-          # 3. Synchronize configuration
-          yes "" | make O=out ARCH=arm64 CC=clang oldconfig || make O=out ARCH=arm64 CC=clang olddefconfig
+          # 2. Defconfig sync
+          make O=out ARCH=arm64 CC=clang olddefconfig
 
-          # 4. Compile Kernel Image, DTBs and DTBOs
+          # 3. Compile Kernel Image, DTBs and DTBOs
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -73,12 +64,15 @@ jobs:
 
       - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
         run: |
-          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
           # Setup device info
           sed -i 's/do.devicecheck=1/do.devicecheck=1/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
+
+          # Target boot partition
+          sed -i 's/is_slot_device=0;/is_slot_device=0;\nblock=\/dev\/block\/bootdevice\/by-name\/boot;/g' AnyKernel3/anykernel.sh
 
           # 1. Copy Kernel Image
           cp out/arch/arm64/boot/Image AnyKernel3/
@@ -86,7 +80,7 @@ jobs:
           # 2. Merge Device Tree Blobs (dtb)
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Handle dtbo.img directly
+          # 3. Handle dtbo.img
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           elif find out/ -name "dtbo.img" | grep -q dtbo.img; then
