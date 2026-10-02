@@ -61,7 +61,7 @@ jobs:
 
       - name: Package Kernel with AnyKernel3 (Pure Image Setup)
         run: |
-          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
           # 1. Copy only the compiled Image
           cp out/arch/arm64/boot/Image AnyKernel3/
@@ -124,7 +124,7 @@ jobs:
           ## end vendor_boot install
           EOF
 
-          # Clean up any unused files and pack zip
+          # Clean up unused files and pack flashable zip
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
