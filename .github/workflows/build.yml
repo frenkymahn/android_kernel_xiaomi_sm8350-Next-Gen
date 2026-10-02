@@ -30,7 +30,7 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: Configure and Build Kernel (Image, DTBs, DTBOs)
+      - name: Configure and Build Kernel (Image, DTBs)
         run: |
           export PATH="${GITHUB_WORKSPACE}/clang/bin:$PATH"
           export ARCH=arm64
@@ -47,19 +47,19 @@ jobs:
             arch/arm64/configs/vendor/lahaina-qgki_defconfig \
             arch/arm64/configs/vendor/vili_QGKI.config
 
-          # Set Custom LocalVersion Name to -Next-Gen
+          # Set Custom LocalVersion Name
           scripts/config --file out/.config --set-str LOCALVERSION "-Next-Gen"
 
           # 2. Defconfig sync
           make O=out ARCH=arm64 CC=clang olddefconfig
 
-          # 3. Compile Kernel Image and all Device Trees
+          # 3. Compile Kernel Image & DTBs
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image dtbs
 
-      - name: Package Kernel with AnyKernel3 (HyperOS Compatible)
+      - name: Package Kernel with AnyKernel3 (HyperOS Full Flasher)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
@@ -68,29 +68,23 @@ jobs:
           sed -i 's/device.name1=.*/device.name1=vili/g' AnyKernel3/anykernel.sh
           sed -i 's/device.name2=.*/device.name2=Xiaomi 11T Pro/g' AnyKernel3/anykernel.sh
 
-          # Target boot and dtbo partitions
-          sed -i 's/is_slot_device=0;/is_slot_device=0;\nblock=\/dev\/block\/bootdevice\/by-name\/boot;/g' AnyKernel3/anykernel.sh
+          # Set slot detection & target all partitions (boot, dtbo, vendor_boot)
+          sed -i 's/is_slot_device=0;/is_slot_device=auto;\nblock=\/dev\/block\/bootdevice\/by-name\/boot;\ncustom_parts="dtbo vendor_boot";/g' AnyKernel3/anykernel.sh
 
-          # 1. Copy Kernel Image
+          # 1. Copy Kernel Image (boot partition)
           cp out/arch/arm64/boot/Image AnyKernel3/
 
-          # 2. Merge Device Tree Blobs (dtb)
-          find out/ -name "*.dtb" -not -name ".*" -exec cat {} + > AnyKernel3/dtb
+          # 2. Merge Device Tree Blobs (vendor_boot partition)
+          find out/arch/arm64/boot/dts/ -name "*.dtb" -not -name ".*" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Build Fresh dtbo.img from compiled DTBO files
+          # 3. Generate dtbo.img using mkdtboimg
           curl -sSL "https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-20.0/utils/src/mkdtboimg.py" -o mkdtboimg.py
-          
-          # Find all compiled dtbo files across the build output
-          DTBO_FILES=$(find out/ -name "*.dtbo" -not -name ".*" | sort)
-          
-          if [ -n "$DTBO_FILES" ]; then
-            echo "Creating dtbo.img from found overlays..."
-            python3 mkdtboimg.py create AnyKernel3/dtbo.img $DTBO_FILES
-          elif [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
-          else
-            echo "Direct dtbo not found, extracting overlays from dtb target..."
-            python3 mkdtboimg.py create AnyKernel3/dtbo.img $(find out/arch/arm64/boot/dts/vendor/qcom/ -name "*vili*.dtb" 2>/dev/null || find out/ -name "*sm8350*.dtb")
+
+          # Collect compiled vili/sm8350 blobs safely
+          DT_LIST=$(find out/ -name "*vili*.dtb" -o -name "*sm8350*.dtb" -o -name "*.dtbo" 2>/dev/null | tr '\n' ' ')
+
+          if [ -n "$DT_LIST" ]; then
+            python3 mkdtboimg.py create AnyKernel3/dtbo.img --page_size=4096 $DT_LIST || true
           fi
 
           # 4. Pack flashable zip
