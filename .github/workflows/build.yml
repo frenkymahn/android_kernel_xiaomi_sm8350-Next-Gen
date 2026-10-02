@@ -19,11 +19,7 @@ jobs:
 
       - name: Download AOSP Clang
         run: |
-          mkdir -p clang
-          cd clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
-          tar -xf clang-r487747c.tar.gz
-          cd ..
+          git clone --depth=1 https://gitlab.com/ElectroPerf/prebuilts_clang_host_linux-x86_clang-r487747c.git clang
 
       - name: Configure Kernel (Merged defconfigs)
         run: |
@@ -76,7 +72,7 @@ jobs:
 
           ### AnyKernel setup
           properties() { '
-          kernel.string=NextGen Kernel for FrenkyMahn
+          kernel.string=NextGen Kernel for Xiaomi 11T Pro (vili)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
