@@ -58,29 +58,35 @@ jobs:
             STRIP=llvm-strip \
             Image dtbs
 
-          # 2. Concat Lahaina/Vili DTBs into single dtb
-          find out/arch/arm64/boot/dts/ -name "*lahaina*.dtb" -exec cat {} + > out/arch/arm64/boot/dtb
+          # 2. Extract clean single DTB for Vili (Prevents 30MB bloat)
+          if [ -f out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb ]; then
+            cp out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb out/arch/arm64/boot/dtb
+          else
+            find out/arch/arm64/boot/dts/vendor/qcom/ -maxdepth 1 -name "lahaina.dtb" -exec cp {} out/arch/arm64/boot/dtb \;
+          fi
 
-          # 3. Create or capture dtbo.img safely
-          DTBO_FILES=$(find out/arch/arm64/boot/dts/ -name "*.dtbo" 2>/dev/null || true)
-          if [ -n "$DTBO_FILES" ]; then
+          # 3. Compile dtbo.img using available overlay dtbo files
+          DTBOS=$(find out/arch/arm64/boot/dts/vendor/qcom/ -name "*vili*.dtbo" -o -name "*overlay*.dtbo")
+          if [ -z "$DTBOS" ]; then
+            DTBOS=$(find out/arch/arm64/boot/dts/ -name "*.dtbo")
+          fi
+
+          if [ -n "$DTBOS" ]; then
             if [ -f scripts/dtc/libfdt/mkdtboimg.py ]; then
-              python3 scripts/dtc/libfdt/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBO_FILES
+              python3 scripts/dtc/libfdt/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
             elif [ -f scripts/mkdtboimg.py ]; then
-              python3 scripts/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBO_FILES
+              python3 scripts/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
             else
               curl -sSL "https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz" | tar -xz
-              python3 mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBO_FILES
+              python3 mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
             fi
-          elif [ -f out/arch/arm64/boot/dtbo.img ]; then
-            echo "dtbo.img already built by kernel target."
           fi
 
       - name: Package Kernel with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # 1. Copy Image, DTB and DTBO
+          # 1. Copy Image, Clean DTB and DTBO
           cp out/arch/arm64/boot/Image AnyKernel3/
           if [ -f out/arch/arm64/boot/dtb ]; then
             cp out/arch/arm64/boot/dtb AnyKernel3/
@@ -117,7 +123,7 @@ jobs:
           # Load functions
           . tools/ak3-core.sh;
 
-          # 1. Boot Partition Flash (Kernel + Concatenated DTB)
+          # 1. Boot Partition Flash (Kernel + Clean DTB)
           BLOCK=boot;
           is_slot_device=auto;
           RAMDISK_COMPRESSION=auto;
@@ -127,7 +133,7 @@ jobs:
           flash_boot;
           ## end boot install
 
-          # 2. DTBO Partition Flash (If dtbo.img exists)
+          # 2. DTBO Partition Flash
           if [ -f dtbo.img ]; then
             BLOCK=dtbo;
             is_slot_device=auto;
