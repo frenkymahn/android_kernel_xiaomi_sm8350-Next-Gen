@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc build-essential libncurses5-dev libssl-dev bison flex \
             libelf-dev libfl-dev git curl wget zip unzip python3 python-is-python3 libarchive-tools \
-            device-tree-compiler
+            device-tree-compiler gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu
 
       - name: Download AOSP Clang
         run: |
@@ -44,14 +44,21 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           export ARCH=arm64
           export SUBARCH=arm64
-          export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
 
-          # 1. Compile Kernel Image & All Device Tree Blobs
-          make -j$(nproc --all) O=out CC=clang Image dtbs
+          # 1. Compile Kernel Image & All Device Tree Blobs using LLVM toolchain
+          make -j$(nproc --all) O=out \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            Image dtbs
 
-          # 2. Concat Lahaina/Vili DTBs
+          # 2. Concat Lahaina/Vili DTBs into single dtb
           find out/arch/arm64/boot/dts/vendor/qcom/ -name "*lahaina*.dtb" -exec cat {} + > out/arch/arm64/boot/dtb
 
           # 3. Create dtbo.img using mkdtboimg
@@ -111,6 +118,7 @@ jobs:
 
           split_boot;
           flash_boot;
+          ## end boot install
 
           # 2. DTBO Partition Flash
           BLOCK=dtbo;
@@ -120,6 +128,7 @@ jobs:
           if [ -f dtbo.img ]; then
             flash_boot;
           fi;
+          ## end dtbo install
 
           # 3. Vendor Boot Partition Patch/Preserve
           BLOCK=vendor_boot;
@@ -128,6 +137,7 @@ jobs:
           reset_ak;
           split_boot;
           flash_boot;
+          ## end vendor_boot install
           EOF
 
           # 3. Make flashable zip
