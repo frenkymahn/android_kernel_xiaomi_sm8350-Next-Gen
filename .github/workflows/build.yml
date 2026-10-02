@@ -24,12 +24,12 @@ jobs:
             libelf-dev libfl-dev git curl wget zip unzip python3 python-is-python3 libarchive-tools \
             device-tree-compiler
 
-      - name: Download Clang Toolchain
+      - name: Download AOSP Clang
         run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android12-release clang-repo
           mkdir -p clang
-          wget -q https://github.com/ZyC-Developers/Clang/releases/download/17.0.0/Clang-17.0.0.tar.gz -O clang.tar.gz
-          tar -xf clang.tar.gz -C clang/
-          rm -f clang.tar.gz
+          cp -r clang-repo/clang-r416183b/* clang/ || cp -r clang-repo/clang-r*/* clang/
+          rm -rf clang-repo
 
       - name: Configure Kernel (Merged defconfigs)
         run: |
@@ -51,7 +51,7 @@ jobs:
           # 1. Compile Kernel Image & All Device Tree Blobs
           make -j$(nproc --all) O=out CC=clang Image dtbs
 
-          # 2. Concat Lahaina / Vili DTBs
+          # 2. Concat Lahaina/Vili DTBs
           find out/arch/arm64/boot/dts/vendor/qcom/ -name "*lahaina*.dtb" -exec cat {} + > out/arch/arm64/boot/dtb
 
           # 3. Create dtbo.img using mkdtboimg
