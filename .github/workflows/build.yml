@@ -24,11 +24,12 @@ jobs:
             libelf-dev libfl-dev git curl wget zip unzip python3 python-is-python3 libarchive-tools \
             device-tree-compiler
 
-      - name: Download AOSP Clang
+      - name: Download Clang Toolchain
         run: |
           mkdir -p clang
-          curl -LSs --retry 5 --retry-connrefused \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz" | tar -xz -C clang/
+          wget -q https://github.com/ZyC-Developers/Clang/releases/download/17.0.0/Clang-17.0.0.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang/
+          rm -f clang.tar.gz
 
       - name: Configure Kernel (Merged defconfigs)
         run: |
@@ -50,7 +51,7 @@ jobs:
           # 1. Compile Kernel Image & All Device Tree Blobs
           make -j$(nproc --all) O=out CC=clang Image dtbs
 
-          # 2. Concat Lahaina/Vili DTBs into single dtb
+          # 2. Concat Lahaina / Vili DTBs
           find out/arch/arm64/boot/dts/vendor/qcom/ -name "*lahaina*.dtb" -exec cat {} + > out/arch/arm64/boot/dtb
 
           # 3. Create dtbo.img using mkdtboimg
@@ -65,7 +66,7 @@ jobs:
 
       - name: Package Kernel with AnyKernel3
         run: |
-          git clone url?id=1osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
           # 1. Copy Image, DTB and DTBO
           cp out/arch/arm64/boot/Image AnyKernel3/
@@ -110,7 +111,6 @@ jobs:
 
           split_boot;
           flash_boot;
-          ## end boot install
 
           # 2. DTBO Partition Flash
           BLOCK=dtbo;
@@ -120,7 +120,6 @@ jobs:
           if [ -f dtbo.img ]; then
             flash_boot;
           fi;
-          ## end dtbo install
 
           # 3. Vendor Boot Partition Patch/Preserve
           BLOCK=vendor_boot;
@@ -129,7 +128,6 @@ jobs:
           reset_ak;
           split_boot;
           flash_boot;
-          ## end vendor_boot install
           EOF
 
           # 3. Make flashable zip
