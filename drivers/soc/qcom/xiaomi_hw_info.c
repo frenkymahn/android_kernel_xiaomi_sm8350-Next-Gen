@@ -3,22 +3,16 @@
 #include <linux/export.h>
 #include <linux/init.h>
 
-/*
- * Xiaomi Vili (11T Pro) Hardware & Display Stubs for HyperOS / MIUI
- */
-
 static BLOCKING_NOTIFIER_HEAD(mi_disp_notifier_list);
 
 int get_hw_version_platform(void)
 {
-	/* Vili / SM8350 platform identification */
 	return 1;
 }
 EXPORT_SYMBOL(get_hw_version_platform);
 
 int get_hw_country_version(void)
 {
-	/* Global / India region */
 	return 1;
 }
 EXPORT_SYMBOL(get_hw_country_version);
@@ -43,7 +37,6 @@ EXPORT_SYMBOL(get_hw_version_minor);
 
 int get_hw_id_value(void)
 {
-	/* Matches Xiaomi SM8350 board ID to prevent modem crash */
 	return 1;
 }
 EXPORT_SYMBOL(get_hw_id_value);
@@ -59,3 +52,9 @@ int mi_disp_unregister_client(struct notifier_block *nb)
 	return blocking_notifier_chain_unregister(&mi_disp_notifier_list, nb);
 }
 EXPORT_SYMBOL(mi_disp_unregister_client);
+
+int mi_disp_notifier_call_chain(unsigned long val, void *v)
+{
+	return blocking_notifier_call_chain(&mi_disp_notifier_list, val, v);
+}
+EXPORT_SYMBOL(mi_disp_notifier_call_chain);
