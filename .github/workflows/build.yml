@@ -58,44 +58,37 @@ jobs:
             STRIP=llvm-strip \
             Image dtbs
 
-          # 2. Extract clean single DTB for Vili (Prevents 30MB bloat)
-          if [ -f out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb ]; then
-            cp out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb out/arch/arm64/boot/dtb
-          else
-            find out/arch/arm64/boot/dts/vendor/qcom/ -maxdepth 1 -name "lahaina.dtb" -exec cp {} out/arch/arm64/boot/dtb \;
-          fi
-
-          # 3. Compile dtbo.img using available overlay dtbo files
-          DTBOS=$(find out/arch/arm64/boot/dts/vendor/qcom/ -name "*vili*.dtbo" -o -name "*overlay*.dtbo")
-          if [ -z "$DTBOS" ]; then
-            DTBOS=$(find out/arch/arm64/boot/dts/ -name "*.dtbo")
-          fi
-
-          if [ -n "$DTBOS" ]; then
-            if [ -f scripts/dtc/libfdt/mkdtboimg.py ]; then
-              python3 scripts/dtc/libfdt/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
-            elif [ -f scripts/mkdtboimg.py ]; then
-              python3 scripts/mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
-            else
-              curl -sSL "https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz" | tar -xz
-              python3 mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBOS
-            fi
-          fi
-
       - name: Package Kernel with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-          # 1. Copy Image, Clean DTB and DTBO
-          cp out/arch/arm64/boot/Image AnyKernel3/
-          if [ -f out/arch/arm64/boot/dtb ]; then
-            cp out/arch/arm64/boot/dtb AnyKernel3/
-          fi
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          # 1. Copy Kernel Image
+          cp out/arch/arm64/boot/Image AnyKernel3/Image
+
+          # 2. Extract and Copy clean DTB for Vili (HyperOS/MIUI)
+          if [ -f out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb ]; then
+            cp out/arch/arm64/boot/dts/vendor/qcom/lahaina.dtb AnyKernel3/dtb
+          else
+            find out/arch/arm64/boot/dts/ -name "*lahaina*.dtb" | head -n 1 | xargs -I {} cp {} AnyKernel3/dtb
           fi
 
-          # 2. Write AnyKernel3 Script
+          # 3. Build & Copy dtbo.img using vili overlay
+          # Find overlay dtbo compiled for vili
+          find out/arch/arm64/boot/dts/ -name "*vili*.dtbo" -o -name "*overlay*.dtbo" > dtbos.txt
+          
+          if [ -s dtbos.txt ]; then
+            # mkdtboimg ഉപയോഗിച്ച് dtbo.img സൃഷ്ടിക്കുന്നു
+            if [ -f scripts/dtc/libfdt/mkdtboimg.py ]; then
+              python3 scripts/dtc/libfdt/mkdtboimg.py create AnyKernel3/dtbo.img $(cat dtbos.txt)
+            elif [ -f scripts/mkdtboimg.py ]; then
+              python3 scripts/mkdtboimg.py create AnyKernel3/dtbo.img $(cat dtbos.txt)
+            else
+              curl -sSL "https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz" | tar -xz
+              python3 mkdtboimg.py create AnyKernel3/dtbo.img $(cat dtbos.txt)
+            fi
+          fi
+
+          # 4. Write AnyKernel3 Flash Script
           cat << 'EOF' > AnyKernel3/anykernel.sh
           ### AnyKernel3 Ramdisk Mod Script
           ## osm0sis @ xda-developers
@@ -123,7 +116,7 @@ jobs:
           # Load functions
           . tools/ak3-core.sh;
 
-          # 1. Boot Partition Flash (Kernel + Clean DTB)
+          # 1. Boot Partition Flash (Kernel + Concatenated DTB)
           BLOCK=boot;
           is_slot_device=auto;
           RAMDISK_COMPRESSION=auto;
@@ -133,7 +126,7 @@ jobs:
           flash_boot;
           ## end boot install
 
-          # 2. DTBO Partition Flash
+          # 2. DTBO Partition Flash (Screen & Touch Overlay)
           if [ -f dtbo.img ]; then
             BLOCK=dtbo;
             is_slot_device=auto;
@@ -152,7 +145,7 @@ jobs:
           ## end vendor_boot install
           EOF
 
-          # 3. Make flashable zip
+          # 5. Make Flashable Zip
           cd AnyKernel3
           zip -r9 ../Xiaomi-11T-Pro-NextGen-Kernel.zip * -x .git README.md *placeholder
           cd ..
