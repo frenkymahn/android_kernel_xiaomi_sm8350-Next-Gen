@@ -31,13 +31,26 @@ jobs:
           cp -r clang-repo/clang-r416183b/* clang/ || cp -r clang-repo/clang-r*/* clang/
           rm -rf clang-repo
 
-      - name: Configure Kernel (Merged defconfigs)
+      - name: Configure Kernel & Inject eBPF
         run: |
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           mkdir -p out
           ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out \
             arch/arm64/configs/vendor/lahaina-qgki_defconfig \
             arch/arm64/configs/vendor/vili_QGKI.config
+
+          # eBPF Support Injections for Android Next-Gen / HyperOS
+          cat << 'EOF' >> out/.config
+          CONFIG_BPF=y
+          CONFIG_BPF_SYSCALL=y
+          CONFIG_BPF_JIT=y
+          CONFIG_HAVE_EBPF_JIT=y
+          CONFIG_BPF_EVENTS=y
+          CONFIG_NET_CLS_ACT=y
+          CONFIG_NET_CLS_BPF=y
+          CONFIG_NET_ACT_BPF=y
+          CONFIG_CGROUP_BPF=y
+          EOF
 
       - name: Compile Kernel, DTB and DTBO
         run: |
@@ -47,7 +60,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
 
-          # 1. Compile Kernel Image & All Device Tree Blobs
+          # 1. Compile Kernel Image, DTBs and official DTBO Image
           make -j$(nproc --all) O=out \
             CC=clang \
             LD=ld.lld \
@@ -56,7 +69,7 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            Image dtbs
+            Image dtbs dtbo.img || make -j$(nproc --all) O=out CC=clang LD=ld.lld Image dtbs
 
       - name: Package Kernel with AnyKernel3
         run: |
@@ -65,18 +78,18 @@ jobs:
           # 1. Copy Kernel Image
           cp out/arch/arm64/boot/Image AnyKernel3/Image
 
-          # 2. Concat Lahaina DTBs into single dtb (Proper 2-3 MB size)
-          cat $(find out/arch/arm64/boot/dts/vendor/qcom/ -name "lahaina*.dtb") > AnyKernel3/dtb
+          # 2. Concat clean Lahaina DTBs into single dtb (Proper 2-3 MB size)
+          find out/arch/arm64/boot/dts/vendor/qcom/ -name "lahaina*.dtb" -exec cat {} + > AnyKernel3/dtb
 
-          # 3. Create dtbo.img using mkdtboimg
-          find out/arch/arm64/boot/dts/ -name "*.dtbo" > dtbos.txt
-          echo "Found DTBO files:"
-          cat dtbos.txt
+          # 3. Locate and copy dtbo.img
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/dtbo.img
+          else
+            # Fallback search for compiled dtbo.img in output directory
+            find out/ -name "dtbo.img" -exec cp {} AnyKernel3/dtbo.img \;
+          fi
 
-          curl -sSL "https://android.googlesource.com/platform/system/libufdt/+archive/master/utils/src.tar.gz" | tar -xz
-          python3 mkdtboimg.py create AnyKernel3/dtbo.img $(cat dtbos.txt)
-
-          # 4. Verify AnyKernel3 directory contents
+          # 4. Check folder contents
           ls -lh AnyKernel3/
 
           # 5. Write AnyKernel3 Flash Script
